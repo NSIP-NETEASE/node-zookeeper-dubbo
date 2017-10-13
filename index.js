@@ -69,7 +69,7 @@ NZD.prototype._applyServices = function () {
 
   for (let key in refs) {
     NZD.prototype[key] = new Service(self.client, self.dubboVer, refs[key], self);
-    NZD.prototype[key]._attach(self._events[key])
+    NZD.prototype[key]._attach(self._ServiceEvents[key])
   }
 };
 
