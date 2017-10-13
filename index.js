@@ -40,6 +40,7 @@ var NZD = function (opt) {
     spinDelay: 1000,
     retries: 5
   });
+  this._ServiceEvents = {}
 
   this.client.connect();
   this.client.once('connected', function () {
@@ -49,14 +50,52 @@ var NZD = function (opt) {
 };
 NZD.prototype._consumer = reg.consumer;
 
+NZD.prototype.listen = function (name) {
+  if (this._ServiceEvents[name]) return;
+  let service = this._ServiceEvents[name] = new ServiceEvents()
+  return new Promise(function (res, rej) {
+    service.on('success', function (obj) {
+      res(obj)
+    })
+    service.on('error', function (error) {
+      rej(error)
+    })
+  })
+}
+
 NZD.prototype._applyServices = function () {
   const refs = this.dependencies;
   const self = this;
 
   for (let key in refs) {
     NZD.prototype[key] = new Service(self.client, self.dubboVer, refs[key], self);
+    NZD.prototype[key]._attach(self._events[key])
   }
 };
+
+var ServiceEvents = function (opt = {}) {
+  this.name = opt.name
+  this._events = {}
+}
+
+ServiceEvents.prototype.on = function (type, cb) {
+  let fns = this._events[type] || []
+  if (cb instanceof Function) {
+    fns.push(cb)
+  } else if (cb instanceof Array) {
+    fns = fns.concat(cb.filter(function (item) {
+      return item instanceof Function
+    }))
+  }
+  this._events[type] = fns
+}
+
+ServiceEvents.prototype.emit = function (type, obj) {
+  let fns = this._events[type] || []
+  fns.forEach(function (cb) {
+    cb instanceof Function && cb(obj)
+  })
+}
 
 var Service = function (zk, dubboVer, depend, opt) {
   this._zk = zk;
@@ -66,10 +105,6 @@ var Service = function (zk, dubboVer, depend, opt) {
   this._interface = depend.interface;
   this._signature = Object.assign({}, depend.methodSignature);
   this._root = opt._root;
-  this._events = {
-    'error': [],
-    'success': []
-  }
 
   this._encodeParam = {
     _dver: dubboVer || '2.5.3.6',
@@ -82,20 +117,12 @@ var Service = function (zk, dubboVer, depend, opt) {
   this._find(depend.interface);
 };
 
-Service.prototype.on = function (type, cb) {
-  let events = this._events[type]
-  if (!events) { console.log(`no events named ${type}`); return; }
-  if (cb instanceof Function) {
-    events.push(cb)
-  }
+Service.prototype._attach = function (events) {
+  this._events = events
 }
 
 Service.prototype._emit = function (type, obj) {
-  let events = this._events[type]
-  if (!events) { console.log(`no events named ${type}`); return; }
-  events.forEach(function (cb) {
-    cb instanceof Function && cb(obj)
-  })
+  this._events.emit(type, obj)
 }
 
 Service.prototype._find = function (path, cb) {
@@ -124,7 +151,7 @@ Service.prototype._find = function (path, cb) {
 
     for (let i = 0, l = children.length; i < l; i++) {
       zoo = qs.parse(decodeURIComponent(children[i]));
-      if ((zoo.version === 'LATEST' || zoo.version === self._version) && zoo.group === self._group) {
+      if (zoo.version === self._version && zoo.group === self._group) {
         self._hosts.push(url.parse(Object.keys(zoo)[0]).host);
         const methods = zoo.methods.split(',');
         for (let i = 0, l = methods.length; i < l; i++) {
