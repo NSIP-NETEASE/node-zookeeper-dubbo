@@ -109,6 +109,7 @@ function consumer() {
     info.query.revision  = serv.version;
     info.query.version   = serv.version;
     info.query.group     = serv.group;
+    info.query.pid       = process.pid;
     paths.push(`/${self._root}/${serv.interface}/consumers/${encodeURIComponent(url.format(info))}`);
   }
 
